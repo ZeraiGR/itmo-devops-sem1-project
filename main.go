@@ -42,7 +42,7 @@ func initDatabase() {
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
 		dbHost, dbPort, dbUser, dbPassword, dbName,
 	)
-	db, err = sql.Open("postgres", connectionData)
+	database, err = sql.Open("postgres", connectionData)
 	if err != nil {
 		log.Fatalf("Ошибка подключения к базе данных: %v", err)
 	}
@@ -87,12 +87,12 @@ func logAndRespondError(w http.ResponseWriter, logMessage string, logErr error, 
 	http.Error(w, userMessage, statusCode)
 }
 
-func getFileFromRequest(r *http.Request) (http.File, error) {
+func getFileFromRequest(r *http.Request) (multipart.File, error) {
     file, _, err := r.FormFile("file")
     return file, err
 }
 
-func saveFileToTemp(file http.File) (*os.File, error) {
+func saveFileToTemp(file multipart.File) (*os.File, error) {
     tempFile, err := os.CreateTemp("", "uploaded-*.zip")
     if err != nil {
      return nil, err
@@ -270,7 +270,7 @@ func handleGetPrices(w http.ResponseWriter, r *http.Request) {
 }
    
 func fetchPricesFromDB() (*sql.Rows, error) {
-    return db.Query("SELECT id, created_at, name, category, price FROM prices")
+    return database.Query("SELECT id, created_at, name, category, price FROM prices")
 }
    
 func createCSVFile(rows *sql.Rows, csvFilePath string) error {
@@ -339,7 +339,7 @@ func serveZipFileToClient(w http.ResponseWriter, r *http.Request, zipFilePath st
 func main() {
     initDatabase()
 
-	defer db.Close()
+	defer database.Close()
 
 	http.HandleFunc("/api/v0/prices", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
