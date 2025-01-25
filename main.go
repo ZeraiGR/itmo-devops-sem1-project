@@ -199,17 +199,21 @@ func calculateAndRespondTotals(tx *sql.Tx, w http.ResponseWriter) error {
     totalItems, totalCategories, totalPrice, err := calculateTotals(tx)
 
     if err != nil {
-     return err
+        return err
     }
    
     if err = tx.Commit(); err != nil {
-     return fmt.Errorf("Ошибка подтверждения транзакции: %v", err)
+        return fmt.Errorf("Ошибка подтверждения транзакции: %v", err)
     }
    
     response := ResponseForPost{
-     ItemsTotal:      totalItems,
-     CategoriesTotal:
+        ItemsTotal:     totalItems,
+        CategoriesTotal: totalCategories,
+        PriceTotal:     totalPrice,
     }
+
+    w.Header().Set("Content-Type", "application/json")
+    return json.NewEncoder(w).Encode(response)
 }
 
 func calculateTotals(tx *sql.Tx) (int, int, float64, error) {
