@@ -1,21 +1,22 @@
 package main
 
 import (
- "archive/zip"
- "database/sql"
- "encoding/csv"
- "encoding/json"
- "fmt"
- "io"
- "log"
- "net/http"
- "os"
- "path/filepath"
- "strconv"
- "strings"
- "time"
+	"archive/zip"
+	"database/sql"
+	"encoding/csv"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
 
- _ "github.com/lib/pq"
+	_ "github.com/lib/pq"
 )
 
 // Constant values for database connection
@@ -51,14 +52,14 @@ func initDatabase() {
 // Обработчик для POST /api/v0/prices
 func handlePostPrices(w http.ResponseWriter, r *http.Request) {
     file, _, err := r.FormFile("file")
-    if err != nil {
-     logAndRespondError(w, "Ошибка загрузки файла: %v", err, "Не удалось загрузить файл", http.StatusBadRequest)
-     return
-    }
+	if err != nil {
+		log.Printf("Ошибка загрузки файла: %v", err)
+		http.Error(w, "Не удалось загрузить файл", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
 
-    defer file.Close()
-   
-    tempFile, err := os.CreateTemp("", "uploaded-*.zip")
+	tempFile, err := os.CreateTemp("", "uploaded-*.zip")
 	if err != nil {
 		log.Printf("Ошибка сохранения файла: %v", err)
 		http.Error(w, "Ошибка сохранения файла", http.StatusInternalServerError)
@@ -71,18 +72,155 @@ func handlePostPrices(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Ошибка копирования файла", http.StatusInternalServerError)
 		return
 	}
-    
-    csvRecords, err := extractCSVRecordsFromZip(tempFile.Name())
+
+	zipReader, err := zip.OpenReader(tempFile.Name())
+	if err != nil {
+		log.Printf("Ошибка открытия архива: %v", err)
+		http.Error(w, "Ошибка чтения архива", http.StatusBadRequest)
+		return
+	}
+	defer zipReader.Close()
+
+    csvRecords, err := extractCSVRecords(&zipReader.Reader, w)
+
     if err != nil {
-     logAndRespondError(w, err.Error(), nil, err.Error(), http.StatusInternalServerError)
-     return
+        log.Fatalf("Ошибка извлечения CSV-записей: %v", err)
     }
-   
-    if err := processCSVRecords(csvRecords, w); err != nil {
-     log.Println(err)
-     http.Error(w, "Не удалось обработать CSV записи", http.StatusInternalServerError)
+    
+	tx, err := database.Begin()
+	
+    if err != nil {
+		log.Printf("Ошибка начала транзакции: %v", err)
+		http.Error(w, "Ошибка начала транзакции", http.StatusInternalServerError)
+		return
+	}
+
+	defer tx.Rollback()
+
+    if err := handleCSVRecords(tx, csvRecords); err != nil {
+        return
+    }
+
+    if err := calculateAndRespond(tx, w); err != nil {
+        return
     }
 }
+
+func extractCSVRecords(zipReader *zip.Reader, w http.ResponseWriter) ([][]string, error) {
+    var csvRecords [][]string
+
+    for _, f := range zipReader.File {
+     if strings.HasSuffix(f.Name, ".csv") {
+      csvFile, err := f.Open()
+      if err != nil {
+        log.Printf("Ошибка открытия CSV: %v", err)
+        http.Error(w, "Ошибка открытия CSV", http.StatusInternalServerError)
+        return nil, errors.New("ошибка открытия CSV")
+      }
+      defer csvFile.Close()
+   
+      reader := csv.NewReader(csvFile)
+      records, err := reader.ReadAll()
+      if err != nil {
+       log.Printf("Ошибка чтения CSV: %v", err)
+       http.Error(w, "Ошибка чтения CSV", http.StatusInternalServerError)
+       return nil, errors.New("ошибка чтения CSV")
+      }
+      csvRecords = append(csvRecords, records...)
+     }
+    }
+
+    return csvRecords, nil
+}
+
+func handleCSVRecords(tx *sql.Tx, csvRecords [][]string) error {
+    for _, record := range csvRecords[1:] {
+     if len(record) != 5 {
+      log.Printf("Invalid record length")
+      continue
+     }
+   
+     id := strings.TrimSpace(record[0])
+     name := strings.TrimSpace(record[1])
+     category := strings.TrimSpace(record[2])
+     created_at := strings.TrimSpace(record[4])
+     price, err := strconv.ParseFloat(strings.TrimSpace(record[3]), 64)
+   
+     if err != nil {
+      log.Printf("Invalid price '%s': %v", record[3], err)
+      continue
+     }
+   
+     if _, err := time.Parse("2006-01-02", created_at); err != nil {
+      log.Printf("Invalid create_date '%s': %v", created_at, err)
+      continue
+     }
+   
+     _, err = tx.Exec(`
+      INSERT INTO prices (id, created_at, name, category, price)
+      VALUES ($1, $2, $3, $4, $5)
+     `, id, created_at, name, category, price)
+     if err != nil {
+      log.Printf("Database entry error for ID '%s': %v", id, err)
+      continue
+     }
+    }
+    return nil
+}
+
+func calculateAndRespond(tx *sql.Tx, w http.ResponseWriter) error {
+    var totalItems int
+    var totalCategories int
+    var totalPrice float64
+   
+    // Подсчет общего количества элементов
+    err := tx.QueryRow("SELECT COUNT(*) FROM prices").Scan(&totalItems)
+    if err != nil {
+     log.Printf("Ошибка получения total_items: %v", err)
+     http.Error(w, "Ошибка чтения из базы данных", http.StatusInternalServerError)
+     return err
+    }
+   
+    // Подсчет уникальных категорий
+    err = tx.QueryRow("SELECT COUNT(DISTINCT category) FROM prices").Scan(&totalCategories)
+    if err != nil {
+     log.Printf("Ошибка получения total_categories: %v", err)
+     http.Error(w, "Ошибка чтения из базы данных", http.StatusInternalServerError)
+     return err
+    }
+   
+    // Подсчет общей суммы цен
+    err = tx.QueryRow("SELECT COALESCE(SUM(price), 0) FROM prices").Scan(&totalPrice)
+    if err != nil {
+     log.Printf("Ошибка получения total_price: %v", err)
+     http.Error(w, "Ошибка чтения из базы данных", http.StatusInternalServerError)
+     return err
+    }
+   
+    // Завершаем транзакцию (коммитим все изменения)
+    if err := tx.Commit(); err != nil {
+     log.Printf("Ошибка подтверждения транзакции: %v", err)
+     http.Error(w, "Ошибка подтверждения транзакции", http.StatusInternalServerError)
+     return err
+    }
+   
+    // Формируем и отправляем ответ
+    response := map[string]interface{}{
+     "total_items":      totalItems,
+     "total_categories": totalCategories,
+     "total_price":      totalPrice,
+    }
+   
+    w.Header().Set("Content-Type", "application/json")
+    if err := json.NewEncoder(w).Encode(response); err != nil {
+     log.Printf("Ошибка кодирования JSON: %v", err)
+     http.Error(w, "Ошибка формирования ответа", http.StatusInternalServerError)
+     return err
+    }
+   
+    return nil
+}
+   
 
 func logAndRespondError(w http.ResponseWriter, logMessage string, logErr error, userMessage string, statusCode int) {
 	if logErr != nil {
@@ -94,28 +232,6 @@ func logAndRespondError(w http.ResponseWriter, logMessage string, logErr error, 
 	http.Error(w, userMessage, statusCode)
 }
 
-func extractCSVRecordsFromZip(fileName string) ([][]string, error) {
-    zipReader, err := zip.OpenReader(fileName)
-    if err != nil {
-     return nil, fmt.Errorf("Ошибка открытия архива: %v", err)
-    }
-    defer zipReader.Close()
-   
-    var csvRecords [][]string
-    for _, f := range zipReader.File {
-     if !strings.HasSuffix(f.Name, ".csv") {
-      continue
-     }
-   
-     records, err := readCSVFile(f)
-     if err != nil {
-      return nil, err
-     }
-     csvRecords = append(csvRecords, records...)
-    }
-    return csvRecords, nil
-}
-
 func readCSVFile(file *zip.File) ([][]string, error) {
     csvFile, err := file.Open()
     if err != nil {
@@ -125,103 +241,6 @@ func readCSVFile(file *zip.File) ([][]string, error) {
    
     reader := csv.NewReader(csvFile)
     return reader.ReadAll()
-}
-
-func processCSVRecords(csvRecords [][]string, w http.ResponseWriter) error {
-    tx, err := database.Begin()
-    if err != nil {
-     return fmt.Errorf("Ошибка при попытке начать транзакцию: %v", err)
-    }
-    defer tx.Rollback()
-   
-    for _, record := range csvRecords {
-     if err := processRecord(tx, record); err != nil {
-      log.Println(err)
-      continue
-     }
-    }
-   
-    return calculateAndRespondTotals(tx, w)
-}
-
-func processRecord(tx *sql.Tx, record []string) error {
-    if len(record) < 5 {
-     return nil
-    }
-   
-    id, createdAt, name, category, price, err := parseRecord(record)
-    if err != nil {
-     return err
-    }
-   
-    _, err = tx.Exec(`
-     INSERT INTO prices (id, created_at, name, category, price)
-     VALUES ($1, $2, $3, $4, $5)
-    `, id, createdAt, name, category, price)
-    if err != nil {
-     return fmt.Errorf("Ошибка во время записи в базу данных для ID '%s': %v", id, err)
-    }
-    return nil
-}
-
-func parseRecord(record []string) (string, string, string, string, float64, error) {
-    id := strings.TrimSpace(record[0])
-    createdAt := strings.TrimSpace(record[1])
-    name := strings.TrimSpace(record[2])
-    category := strings.TrimSpace(record[3])
-    price, err := strconv.ParseFloat(strings.TrimSpace(record[4]), 64)
-    if err != nil {
-     return "", "", "", "", 0, fmt.Errorf("Ошибка при преобразовании цены '%s': %v", record[4], err)
-    }
-   
-    if _, err = time.Parse("2006-01-02", createdAt); err != nil {
-     return "", "", "", "", 0, fmt.Errorf("Некорректный формат даты '%s': %v", createdAt, err)
-    }
-    return id, createdAt, name, category, price, nil
-}
-
-func calculateAndRespondTotals(tx *sql.Tx, w http.ResponseWriter) error {
-    totalItems, totalCategories, totalPrice, err := calculateTotals(tx)
-
-    if err != nil {
-        return err
-    }
-   
-    if err = tx.Commit(); err != nil {
-        return fmt.Errorf("Ошибка подтверждения транзакции: %v", err)
-    }
-   
-    response := ResponseForPost{
-        ItemsTotal:     totalItems,
-        CategoriesTotal: totalCategories,
-        PriceTotal:     totalPrice,
-    }
-
-    w.Header().Set("Content-Type", "application/json")
-    return json.NewEncoder(w).Encode(response)
-}
-
-func calculateTotals(tx *sql.Tx) (int, int, float64, error) {
-	var totalItems int
-	var totalCategories int
-	var totalPrice float64
-   
-	err := tx.QueryRow("SELECT COUNT(*) FROM prices").Scan(&totalItems)
-	if err != nil {
-	 return 0, 0, 0, fmt.Errorf("Ошибка получения total_items: %v", err)
-	}
-   
-	err = tx.QueryRow("SELECT COUNT(DISTINCT category) FROM prices").Scan(&totalCategories)
-	if err != nil {
-	 return 0, 0, 0, fmt.Errorf("Ошибка получения total_categories: %v", err)
-	}
-   
-	err = tx.QueryRow("SELECT SUM(price) FROM prices").Scan(&totalPrice)
-	if err != nil {
-	 return 0, 0, 0, fmt.Errorf("Ошибка получения total_price: %v", err)
-	}
-   
-	return totalItems, totalCategories, totalPrice, nil
 }
 
 // Обработчик для GET /api/v0/prices

@@ -1,9 +1,6 @@
 #!/bin/bash
 
-# Завершаем выполнение при ошибках
 set -e
-
-echo "Подготовка базы данных..."
 
 # Переменные для подключения
 PGHOST="localhost"
@@ -12,44 +9,56 @@ PGUSER="validator"
 PGPASSWORD="val1dat0r"
 DBNAME="project-sem-1"
 
-export PGPASSWORD
+unameOut="$(uname -s)"
+case "${unameOut}" in
+    Linux*)     machine=Linux;;
+    Darwin*)    machine=Mac;;
+    CYGWIN*)    machine=Cygwin;;
+    MINGW*)     machine=MinGw;;
+    *)          machine="UNKNOWN:${unameOut}"
+esac
 
-# Проверка доступности базы данных
-echo "Проверяем доступность базы данных..."
-if ! psql -U "$PGUSER" -h "$PGHOST" -p "$PGPORT" -d "$DBNAME" -c "\\q" &> /dev/null; then
-  echo "База данных $DBNAME недоступна. Проверяем настройки..."
-  
-  # Проверка подключения с пользователем postgres
-  echo "Пробуем подключиться как postgres..."
-  PGUSER="postgres"
-  if ! psql -U "$PGUSER" -h "$PGHOST" -p "$PGPORT" -c "\\q" &> /dev/null; then
-    echo "Ошибка: Не удалось подключиться к базе данных как postgres."
-    exit 1
-  fi
+echo ${machine}
 
-  # Создаём пользователя и базу данных
-  echo "Создаём пользователя и базу данных..."
-  psql -U "$PGUSER" -h "$PGHOST" -p "$PGPORT" <<-EOSQL
-    DO \$\$ BEGIN
-      IF NOT EXISTS (SELECT FROM pg_catalog.pg_user WHERE usename = 'validator') THEN
-        CREATE USER validator WITH PASSWORD 'val1dat0r';
-      END IF;
-    END \$\$;
+if [ "$machine" == "Mac" ]; then
+    # mac os specific flow...
+elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
 
-    DO \$\$ BEGIN
-      IF NOT EXISTS (SELECT FROM pg_database WHERE datname = '${DBNAME}') THEN
-        CREATE DATABASE ${DBNAME} OWNER validator;
-      END IF;
-    END \$\$;
+    echo "Проверяем доступность базы данных..."
+    if ! psql -U "$PGUSER" -h "$PGHOST" -p "$PGPORT" -d "$DBNAME" -c "\\q" &> /dev/null; then
+    echo "База данных $DBNAME недоступна. Проверяем настройки..."
+    
+    echo "Пробуем подключиться как postgres..."
+    PGUSER="postgres"
+    if ! psql -U "$PGUSER" -h "$PGHOST" -p "$PGPORT" -c "\\q" &> /dev/null; then
+        echo "Ошибка: Не удалось подключиться к базе данных как postgres."
+        exit 1
+    fi
 
-    GRANT ALL PRIVILEGES ON DATABASE ${DBNAME} TO validator;
+    echo "Создаём пользователя и базу данных..."
+    psql -U "$PGUSER" -h "$PGHOST" -p "$PGPORT" <<-EOSQL
+        DO \$\$ BEGIN
+        IF NOT EXISTS (SELECT FROM pg_catalog.pg_user WHERE usename = 'validator') THEN
+            CREATE USER validator WITH PASSWORD 'val1dat0r';
+        END IF;
+        END \$\$;
+
+        DO \$\$ BEGIN
+        IF NOT EXISTS (SELECT FROM pg_database WHERE datname = '${DBNAME}') THEN
+            CREATE DATABASE ${DBNAME} OWNER validator;
+        END IF;
+        END \$\$;
+
+        GRANT ALL PRIVILEGES ON DATABASE ${DBNAME} TO validator;
 EOSQL
-else
-  echo "База данных $DBNAME доступна. Ничего не требуется."
+
+    else
+        echo "База данных $DBNAME доступна. Ничего не требуется."
+    fi
+
 fi
 
-# Проверка/создание таблицы
-echo "Проверяем таблицу prices..."
+echo "Создаем таблицу prices..."
 PGUSER="validator"
 psql -U "$PGUSER" -h "$PGHOST" -p "$PGPORT" -d "$DBNAME" <<-EOSQL
   CREATE TABLE IF NOT EXISTS prices (
@@ -62,4 +71,4 @@ psql -U "$PGUSER" -h "$PGHOST" -p "$PGPORT" -d "$DBNAME" <<-EOSQL
   );
 EOSQL
 
-echo "Подготовка базы данных завершена успешно."
+echo "Подготовка базы данных успешно завершена."
