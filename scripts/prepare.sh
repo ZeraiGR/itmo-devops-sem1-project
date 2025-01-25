@@ -23,8 +23,22 @@ esac
 echo ${machine}
 
 if [ "$machine" == "Mac" ]; then
-    # mac os specific flow...
-    echo "flow for mac os postgress preparing";
+    echo "run mac os specific flow"
+    psql -U postgres <<-EOSQL
+    DO \$\$ BEGIN
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_user WHERE usename = 'validator') THEN
+        CREATE USER validator WITH PASSWORD 'val1dat0r';
+    END IF;
+    END \$\$;
+
+    DO \$\$ BEGIN
+    IF NOT EXISTS (SELECT FROM pg_database WHERE datname = '${DBNAME}') THEN
+        CREATE DATABASE ${DBNAME} OWNER validator;
+    END IF;
+    END \$\$;
+
+    GRANT ALL PRIVILEGES ON DATABASE ${DBNAME} TO validator;
+EOSQL
 elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
 
     echo "Проверяем доступность базы данных..."
