@@ -21,36 +21,24 @@ TEST_CSV="test_data.csv"
 RESPONSE_ZIP="response.zip"
 
 create_test_files() {
-    local level=$1
+    # Создаем тестовый CSV файл с корректными данными
+    echo "id,name,category,price,created_at" > $TEST_CSV
+    echo "1,item1,cat1,100,2024-01-01" >> $TEST_CSV
+    echo "2,item2,cat2,200,2024-01-15" >> $TEST_CSV
     
-    if [ "$level" -eq 3 ]; then
-        # Создаем тестовый CSV файл с некорректными данными для сложного уровня
-        echo "id,name,category,price,create_date" > $TEST_CSV
-        echo "1,item1,cat1,100,2024-01-01" >> $TEST_CSV
-        echo "2,item2,cat2,200,2024-01-15" >> $TEST_CSV
-        echo "3,item3,cat3,invalid_price,2024-01-20" >> $TEST_CSV
-        echo "4,,cat4,400,2024-01-25" >> $TEST_CSV
-        echo "5,item5,,500,2024-01-30" >> $TEST_CSV
-        echo "6,item6,cat6,600,invalid_date" >> $TEST_CSV
-        echo "1,item1,cat1,100,2024-01-01" >> $TEST_CSV
-        
-        zip $TEST_ZIP $TEST_CSV
-        tar -cf $TEST_TAR $TEST_CSV
-    else
-        # Создаем тестовый CSV файл с корректными данными для простого и продвинутого уровней
-        echo "id,name,category,price,create_date" > $TEST_CSV
-        echo "1,item1,cat1,100,2024-01-01" >> $TEST_CSV
-        echo "2,item2,cat2,200,2024-01-15" >> $TEST_CSV
-        echo "3,item3,cat3,300,2024-01-20" >> $TEST_CSV
-        
-        zip $TEST_ZIP $TEST_CSV
-        tar -cf $TEST_TAR $TEST_CSV
-    fi
+    # Добавляем некорректные данные
+    echo "3,item3,cat3,invalid_price,2024-01-20" >> $TEST_CSV
+    echo "4,,cat4,400,2024-01-25" >> $TEST_CSV  # пустое имя
+    echo "5,item5,,500,2024-01-30" >> $TEST_CSV  # пустая категория
+    echo "6,item6,cat6,600,invalid_date" >> $TEST_CSV
+    echo "1,item1,cat1,100,2024-01-01" >> $TEST_CSV  # дубликат
+    
+    # Создаем ZIP и TAR архивы
+    zip $TEST_ZIP $TEST_CSV
+    tar -cf $TEST_TAR $TEST_CSV
 }
 
 check_api_simple() {
-    create_test_files 1
-
     echo -e "\nПроверка API (простой уровень)"
     
     # Проверка POST /api/v0/prices
@@ -58,7 +46,6 @@ check_api_simple() {
     response=$(curl -s -F "file=@$TEST_ZIP" "${API_HOST}/api/v0/prices")
     if [[ $response == *"total_items"* && $response == *"total_categories"* && $response == *"total_price"* ]]; then
         echo -e "${GREEN}✓ POST запрос успешен${NC}"
-        
     else
         echo -e "${RED}✗ POST запрос неуспешен${NC}"
         return 1
@@ -103,8 +90,6 @@ check_api_simple() {
 }
 
 check_api_advanced() {
-    create_test_files 2
-    
     echo -e "\nПроверка API (продвинутый уровень)"
     
     # Проверка POST с ZIP
@@ -132,7 +117,6 @@ check_api_advanced() {
 }
 
 check_api_complex() {
-    create_test_files 3
     echo -e "\nПроверка API (сложный уровень)"
     
     # Проверка POST с проверкой обработки некорректных данных
@@ -304,6 +288,8 @@ cleanup() {
 main() {
     local level=$1
     local failed=0
+    
+    create_test_files
     
     case $level in
         1)
