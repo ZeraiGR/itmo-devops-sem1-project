@@ -19,6 +19,8 @@ echo "Запуск службы PostgreSQL..."
 sudo systemctl start postgresql
 sudo systemctl enable postgresql
 
+sudo systemctl status postgresql
+
 echo "PostgreSQL успешно установлен и запущен."
 
 echo "Подготовка базы данных..."
