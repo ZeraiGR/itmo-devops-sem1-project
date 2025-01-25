@@ -35,7 +35,7 @@ echo "Подготовка базы данных..."
 DB_HOST="localhost"
 DB_PORT=5432
 DB_ADMIN="postgres"
-DB_NAME="project_sem_1"
+DB_NAME="project-sem-1"
 DB_USER="validator"
 DB_PASSWORD="val1dat0r"
 
