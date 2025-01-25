@@ -9,6 +9,8 @@ PGUSER="validator"
 PGPASSWORD="val1dat0r"
 DBNAME="project-sem-1"
 
+export PGPASSWORD
+
 unameOut="$(uname -s)"
 case "${unameOut}" in
     Linux*)     machine=Linux;;
