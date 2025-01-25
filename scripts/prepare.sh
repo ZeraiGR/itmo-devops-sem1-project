@@ -1,48 +1,36 @@
 #!/bin/bash
 
+# Завершаем выполнение при ошибках
 set -e
 
-echo "Начало установки зависимостей приложения..."
+echo "Создание базы данных"
 
-# Установка зависимости для Go проекта
-go get -u github.com/lib/pq
+# Переменные для подключения
+PGHOST="localhost"
+PGPORT=5432
+PGUSER="validator"
+PGPASSWORD="val1dat0r"
+DBNAME="project-sem-1"
 
-echo "Зависимости проекта установлены."
+export PGPASSWORD
 
-echo "Обновление списка пакетов..."
-sudo apt update
+# Проверка доступности базы данных
+echo "Проверка доступности базы данных"
+if ! psql -U "$PGUSER" -h "$PGHOST" -p "$PGPORT" -d "$DBNAME" -c "\\q" &> /dev/null; then
+  echo "База данных $DBNAME недоступна. Проверяем настройки."
+  
+  # Проверка подключения с пользователем postgres
+  echo "Подключение под postgres"
+  PGUSER="postgres"
+  if ! psql -U "$PGUSER" -h "$PGHOST" -p "$PGPORT" -c "\\q" &> /dev/null; then
+    echo "Ошибка: Не удалось подключиться как postgres."
+    exit 1
+  fi
 
-echo "Установка PostgreSQL..."
-sudo apt install -y postgresql postgresql-contrib
-
-echo "Запуск службы PostgreSQL..."
-sudo systemctl start postgresql
-sudo systemctl enable postgresql
-
-echo "Проверка состояния службы PostgreSQL и ожидание её готовности..."
-# Ждем пока сокет сервера не станет доступен
-until pg_isready -h localhost
-do
-  echo "Ожидание запуска PostgreSQL..."
-  sleep 1
-done
-
-echo "PostgreSQL успешно установлен и запущен."
-
-echo "Подготовка базы данных..."
-
-# Данные для подключения к базе данных администратора
-DB_HOST="localhost"
-DB_PORT=5432
-DB_ADMIN="postgres"
-DB_NAME="project-sem-1"
-DB_USER="validator"
-DB_PASSWORD="val1dat0r"
-
-# Создание базы данных и пользователя
-echo "Создание базы данных $DB_NAME и пользователя $DB_USER..."
-psql -U "$DB_USER" -h "$DB_HOST" -p "$DB_PORT" <<EOSQL
-DO \$\$ BEGIN
+  # Создание пользователя и базы данных
+  echo "Создаём пользователя и базу данных..."
+  psql -U "$PGUSER" -h "$PGHOST" -p "$PGPORT" <<-EOSQL
+    DO \$\$ BEGIN
       IF NOT EXISTS (SELECT FROM pg_catalog.pg_user WHERE usename = 'validator') THEN
         CREATE USER validator WITH PASSWORD 'val1dat0r';
       END IF;
@@ -56,7 +44,8 @@ DO \$\$ BEGIN
 
     GRANT ALL PRIVILEGES ON DATABASE ${DBNAME} TO validator;
 EOSQL
+else
+  echo "База данных $DBNAME доступна."
+fi
 
-echo "База данных подготовлена."
-
-echo "Скрипт подготовки завершен."
+echo "Подготовка базы данных завершена успешно."
