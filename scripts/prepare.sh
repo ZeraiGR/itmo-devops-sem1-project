@@ -12,7 +12,7 @@ echo "Зависимости установлены."
 echo "Подготовка базы данных..."
 
 # Данные для подключения к базе данных администратора
-DB_ADMIN="kirill-gruzdy"
+DB_ADMIN="postgres"
 DB_NAME="project_sem_1"
 DB_USER="validator"
 DB_PASSWORD="val1dat0r"
