@@ -41,7 +41,7 @@ DB_PASSWORD="val1dat0r"
 
 # Создание базы данных и пользователя
 echo "Создание базы данных $DB_NAME и пользователя $DB_USER..."
-psql -U "$DB_ADMIN" -h "$DB_HOST" -p "$DB_PORT" <<EOSQL
+psql -U "$DB_USER" -h "$DB_HOST" -p "$DB_PORT" <<EOSQL
 DO \$\$ BEGIN
       IF NOT EXISTS (SELECT FROM pg_catalog.pg_user WHERE usename = 'validator') THEN
         CREATE USER validator WITH PASSWORD 'val1dat0r';
