@@ -50,7 +50,7 @@ func initDatabase() {
 
 // Обработчик для POST /api/v0/prices
 func handlePostPrices(w http.ResponseWriter, r *http.Request) {
-    file, err := getFileFromRequest(r)
+    file, _, err := r.FormFile("file")
     if err != nil {
      logAndRespondError(w, "Ошибка загрузки файла: %v", err, "Не удалось загрузить файл", http.StatusBadRequest)
      return
@@ -58,13 +58,20 @@ func handlePostPrices(w http.ResponseWriter, r *http.Request) {
 
     defer file.Close()
    
-    tempFile, err := saveFileToTemp(file)
-    if err != nil {
-     logAndRespondError(w, "Ошибка сохранения файла: %v", err, "Ошибка сохранения файла", http.StatusInternalServerError)
-     return
-    }
-    defer os.Remove(tempFile.Name())
-   
+    tempFile, err := os.CreateTemp("", "uploaded-*.zip")
+	if err != nil {
+		log.Printf("Ошибка сохранения файла: %v", err)
+		http.Error(w, "Ошибка сохранения файла", http.StatusInternalServerError)
+		return
+	}
+	defer os.Remove(tempFile.Name())
+
+	if _, err := io.Copy(tempFile, file); err != nil {
+		log.Printf("Ошибка копирования файла: %v", err)
+		http.Error(w, "Ошибка копирования файла", http.StatusInternalServerError)
+		return
+	}
+    
     csvRecords, err := extractCSVRecordsFromZip(tempFile.Name())
     if err != nil {
      logAndRespondError(w, err.Error(), nil, err.Error(), http.StatusInternalServerError)
@@ -85,28 +92,6 @@ func logAndRespondError(w http.ResponseWriter, logMessage string, logErr error, 
 	}
 
 	http.Error(w, userMessage, statusCode)
-}
-
-func getFileFromRequest(r *http.Request) (multipart.File, error) {
-    file, _, err := r.FormFile("file")
-    return file, err
-}
-
-func saveFileToTemp(file multipart.File) (*os.File, error) {
-    tempFile, err := os.CreateTemp("", "uploaded-*.zip")
-    if err != nil {
-     return nil, err
-    }
-   
-    if _, err = io.Copy(tempFile, file); err != nil {
-     return nil, err
-    }
-   
-    if err = tempFile.Close(); err != nil {
-     return nil, err
-    }
-   
-    return tempFile, nil
 }
 
 func extractCSVRecordsFromZip(fileName string) ([][]string, error) {
