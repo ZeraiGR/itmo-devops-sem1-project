@@ -19,7 +19,13 @@ echo "Запуск службы PostgreSQL..."
 sudo systemctl start postgresql
 sudo systemctl enable postgresql
 
-sudo systemctl status postgresql
+echo "Проверка состояния службы PostgreSQL и ожидание её готовности..."
+# Ждем пока сокет сервера не станет доступен
+until pg_isready -h localhost
+do
+  echo "Ожидание запуска PostgreSQL..."
+  sleep 1
+done
 
 echo "PostgreSQL успешно установлен и запущен."
 
