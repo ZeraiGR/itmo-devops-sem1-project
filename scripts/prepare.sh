@@ -22,6 +22,7 @@ echo ${machine}
 
 if [ "$machine" == "Mac" ]; then
     # mac os specific flow...
+    echo "flow for mac os postgress preparing";
 elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
 
     echo "Проверяем доступность базы данных..."
