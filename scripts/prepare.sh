@@ -79,7 +79,7 @@ echo "Создаем таблицу prices..."
 PGUSER="validator"
 psql -U "$PGUSER" -h "$PGHOST" -p "$PGPORT" -d "$DBNAME" <<-EOSQL
   CREATE TABLE IF NOT EXISTS prices (
-    product_id SERIAL PRIMARY KEY,
+    product_id SERIAL AUTO_INCREMENT PRIMARY KEY,
     id INT NOT NULL,
     name TEXT NOT NULL,
     category TEXT NOT NULL,
