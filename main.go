@@ -167,7 +167,7 @@ func handleCSVRecords(tx *sql.Tx, csvRecords [][]string) error {
 
 		_, err = tx.Exec(`
       INSERT INTO prices (created_at, name, category, price)
-      VALUES ($1, $2, $3, $4, $5)
+      VALUES ($1, $2, $3, $4)
      `, created_at, name, category, price)
 		if err != nil {
 			log.Printf("Database entry error for ID '%s': %v", id, err)
@@ -197,7 +197,6 @@ func calculateResponse(tx *sql.Tx, csvRecords [][]string) (map[string]interface{
 		log.Printf("Ошибка получения totalPrice, totalCategories: %v", err)
 		return nil, err
 	}
-
 
 	// Завершаем транзакцию (коммитим все изменения)
 	if err := tx.Commit(); err != nil {

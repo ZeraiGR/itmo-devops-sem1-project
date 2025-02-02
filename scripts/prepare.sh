@@ -8,6 +8,8 @@ PGPORT=5432
 PGUSER="validator"
 PGPASSWORD="val1dat0r"
 DBNAME="project-sem-1"
+# LOCALPGUSER="kirill-gruzdy"
+# LOCALDBNAME="postgres"
 
 export PGPASSWORD
 
@@ -24,7 +26,7 @@ echo ${machine}
 
 if [ "$machine" == "Mac" ]; then
     echo "run mac os specific flow"
-    psql -U postgres <<-EOSQL
+    psql -d ${DBNAME} -U ${PGUSER} <<-EOSQL
     DO \$\$ BEGIN
     IF NOT EXISTS (SELECT FROM pg_catalog.pg_user WHERE usename = 'validator') THEN
         CREATE USER validator WITH PASSWORD 'val1dat0r';
@@ -33,11 +35,11 @@ if [ "$machine" == "Mac" ]; then
 
     DO \$\$ BEGIN
     IF NOT EXISTS (SELECT FROM pg_database WHERE datname = '${DBNAME}') THEN
-        CREATE DATABASE ${DBNAME} OWNER validator;
+        CREATE DATABASE "${DBNAME}" OWNER validator;
     END IF;
     END \$\$;
 
-    GRANT ALL PRIVILEGES ON DATABASE ${DBNAME} TO validator;
+    GRANT ALL PRIVILEGES ON DATABASE "${DBNAME}" TO validator;
 EOSQL
 elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
 
@@ -66,7 +68,7 @@ elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
         END IF;
         END \$\$;
 
-        GRANT ALL PRIVILEGES ON DATABASE ${DBNAME} TO validator;
+        GRANT ALL PRIVILEGES ON DATABASE "${DBNAME}" TO validator;
 EOSQL
 
     else
@@ -78,9 +80,9 @@ fi
 echo "Создаем таблицу prices..."
 PGUSER="validator"
 psql -U "$PGUSER" -h "$PGHOST" -p "$PGPORT" -d "$DBNAME" <<-EOSQL
+  DROP TABLE prices;
   CREATE TABLE IF NOT EXISTS prices (
-    product_id SERIAL AUTO_INCREMENT PRIMARY KEY,
-    id INT NOT NULL,
+    id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
     category TEXT NOT NULL,
     price NUMERIC(10, 2) NOT NULL,
