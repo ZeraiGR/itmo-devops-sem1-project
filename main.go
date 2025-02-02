@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
@@ -51,6 +52,7 @@ func initDatabase() {
 
 // Обработчик для POST /api/v0/prices
 func handlePostPrices(w http.ResponseWriter, r *http.Request) {
+    var buf bytes.Buffer
 	file, _, err := r.FormFile("file")
 	if err != nil {
 		log.Printf("Ошибка загрузки файла: %v", err)
@@ -59,29 +61,22 @@ func handlePostPrices(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	tempFile, err := os.CreateTemp("", "uploaded-*.zip")
-	if err != nil {
-		log.Printf("Ошибка сохранения файла: %v", err)
-		http.Error(w, "Ошибка сохранения файла", http.StatusInternalServerError)
-		return
-	}
-	defer os.Remove(tempFile.Name())
+    _, err = io.Copy(&buf, file)
+    if err != nil {
+        log.Printf("Ошибка копирования файла в буфер: %v", err)
+        http.Error(w, "Ошибка обработки файла", http.StatusInternalServerError)
+        return
+    }
 
-	if _, err := io.Copy(tempFile, file); err != nil {
-		log.Printf("Ошибка копирования файла: %v", err)
-		http.Error(w, "Ошибка копирования файла", http.StatusInternalServerError)
-		return
-	}
+    fileReader := bytes.NewReader(buf.Bytes())
+    zipReader, err := zip.NewReader(fileReader, fileReader.Size())
+    if err != nil {
+        log.Printf("Ошибка разархивирования файла: %v", err)
+        http.Error(w, "Ошибка обработки файла", http.StatusInternalServerError)
+        return
+    }
 
-	zipReader, err := zip.OpenReader(tempFile.Name())
-	if err != nil {
-		log.Printf("Ошибка открытия архива: %v", err)
-		http.Error(w, "Ошибка чтения архива", http.StatusBadRequest)
-		return
-	}
-	defer zipReader.Close()
-
-	csvRecords, err := extractCSVRecords(&zipReader.Reader, w)
+	csvRecords, err := extractCSVRecords(zipReader, w)
 
 	if err != nil {
 		log.Fatalf("Ошибка извлечения CSV-записей: %v", err)
@@ -237,7 +232,7 @@ func readCSVFile(file *zip.File) ([][]string, error) {
 
 // Обработчик для GET /api/v0/prices
 func handleGetPrices(w http.ResponseWriter, r *http.Request) {
-	rows, err := fetchPricesFromDB()
+	rows, err := database.Query("SELECT id, created_at, name, category, price FROM prices")
 	if err != nil {
 		http.Error(w, "Ошибка чтения из базы данных", http.StatusInternalServerError)
 		return
@@ -263,10 +258,6 @@ func handleGetPrices(w http.ResponseWriter, r *http.Request) {
 	defer os.Remove(zipFilePath)
 
 	serveZipFileToClient(w, r, zipFilePath)
-}
-
-func fetchPricesFromDB() (*sql.Rows, error) {
-	return database.Query("SELECT id, created_at, name, category, price FROM prices")
 }
 
 func createCSVFile(rows *sql.Rows, csvFilePath string) error {
